@@ -1,0 +1,20 @@
+node_modules/
+client/dist/
+*.db
+*.db-wal
+*.db-shm
+.env
+.DS_Store
+@"
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+build/
+*.db
+*.sqlite
+*.sqlite3
+*-wal
+*-shm
+"@ | Set-Content .gitignore

@@ -1,0 +1,453 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ChevronLeft, AlertTriangle, CheckCircle, DollarSign } from 'lucide-react';
+import api from '../../lib/api';
+import { formatBRL } from '../../lib/utils';
+
+interface OrderItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+interface Order {
+  id: string;
+  order_number: string;
+  Customer_id: string;
+  Customer_name?: string;
+  Customer_email?: string;
+  Customer_phone?: string;
+  status: 'pending' | 'confirmed' | 'production' | 'ready' | 'delivered' | 'cancelled';
+  items: OrderItem[];
+  subtotal: number;
+  tax: number;
+  discount: number;
+  total: number;
+  notes?: string;
+  due_date: string;
+  delivery_date?: string;
+  delivery_address?: string;
+  delivery_type?: 'pickup' | 'delivery';
+  payment_status: 'unpaid' | 'partial' | 'paid';
+  payment_method?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const OrderDetail = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [order, setOrder] = useState<Order | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [recordingPayment, setRecordingPayment] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'cash' | 'card'>('pix');
+  const [updateStatusLoading, setUpdateStatusLoading] = useState(false);
+
+  useEffect(() => {
+    fetchOrder();
+  }, [id]);
+
+  const fetchOrder = async () => {
+    if (!id) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await api.get(`/baker/orders/${id}`);
+      setOrder(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load order');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateStatus = async (newStatus: string) => {
+    if (!order) return;
+    try {
+      setUpdateStatusLoading(true);
+      setError(null);
+      await api.put(`/baker/orders/${order.id}`, { status: newStatus });
+      setOrder({ ...order, status: newStatus as any });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update status');
+    } finally {
+      setUpdateStatusLoading(false);
+    }
+  };
+
+  const handleRecordPayment = async () => {
+    if (!order || !paymentAmount) {
+      setError('Please enter an amount');
+      return;
+    }
+
+    try {
+      setUpdateStatusLoading(true);
+      setError(null);
+      await api.post('/baker/payments', {
+        orderId: order.id,
+        amount: parseFloat(paymentAmount),
+        method: paymentMethod,
+      });
+      setPaymentAmount('');
+      setRecordingPayment(false);
+      fetchOrder();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to record payment');
+    } finally {
+      setUpdateStatusLoading(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+      case 'confirmed':
+        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'production':
+        return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+      case 'ready':
+        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+      case 'delivered':
+        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+      case 'cancelled':
+        return 'bg-red-500/20 text-red-400 border-red-500/30';
+      default:
+        return 'bg-surface-700 text-surface-300';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      pending: 'Pending',
+      confirmed: 'Confirmed',
+      production: 'In Production',
+      ready: 'Ready',
+      delivered: 'Delivered',
+      cancelled: 'Cancelled',
+    };
+    return labels[status] || status;
+  };
+
+  const statusFlow = ['pending', 'confirmed', 'production', 'ready', 'delivered'];
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-8 bg-surface-800 rounded w-1/4 animate-pulse"></div>
+        <div className="card animate-pulse space-y-4">
+          <div className="h-4 bg-surface-800 rounded w-3/4"></div>
+          <div className="h-4 bg-surface-800 rounded w-1/2"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="card bg-red-500/10 border-red-500/50">
+        <div className="flex items-start gap-4">
+          <AlertTriangle className="text-red-400 flex-shrink-0 mt-1" size={20} />
+          <div>
+            <h3 className="font-semibold text-red-400">Order not found</h3>
+            <button
+              onClick={() => navigate('/app/orders')}
+              className="btn-secondary text-sm mt-4"
+            >
+              Back to Orders
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-8">
+        <button
+          onClick={() => navigate('/app/orders')}
+          className="btn-ghost p-2"
+        >
+          <ChevronLeft size={20} />
+        </button>
+        <div>
+          <h1 className="page-title">Order #{order.order_number}</h1>
+          <p className="page-subtitle">
+            Created on {new Date(order.created_at).toLocaleDateString('en-US')}
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div className="card bg-red-500/10 border-red-500/50 mb-6 flex items-start gap-3">
+          <AlertTriangle className="text-red-400 flex-shrink-0 mt-1" size={18} />
+          <p className="text-sm text-red-300">{error}</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Main Content */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Status Workflow */}
+          <div className="card">
+            <h3 className="text-lg font-semibold text-white mb-6">Status Flow</h3>
+            <div className="flex items-center justify-between mb-6">
+              {statusFlow.map((status, index) => (
+                <div key={status} className="flex-1 flex flex-col items-center relative">
+                  <button
+                    onClick={() => handleUpdateStatus(status)}
+                    disabled={updateStatusLoading}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold mb-2 transition-all ${
+                      status === order.status
+                        ? 'bg-brand-500 text-surface-950 scale-110'
+                        : statusFlow.indexOf(status) < statusFlow.indexOf(order.status)
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-surface-800 text-surface-400 hover:bg-surface-700'
+                    }`}
+                    title={`Change to ${getStatusLabel(status)}`}
+                  >
+                    {statusFlow.indexOf(status) < statusFlow.indexOf(order.status) ? (
+                      <CheckCircle size={20} />
+                    ) : (
+                      index + 1
+                    )}
+                  </button>
+                  <p className="text-xs text-surface-400 text-center">
+                    {getStatusLabel(status)}
+                  </p>
+
+                  {index < statusFlow.length - 1 && (
+                    <div className="absolute top-4 left-1/2 w-full h-1 bg-surface-800"></div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className={`p-3 rounded-lg text-sm ${getStatusColor(order.status)}`}>
+              Current status: <strong>{getStatusLabel(order.status)}</strong>
+            </div>
+          </div>
+
+          {/* Order Items */}
+          <div className="card">
+            <h3 className="text-lg font-semibold text-white mb-6">Order Items</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-surface-700">
+                    <th className="table-header text-left py-3">Product</th>
+                    <th className="table-header text-center py-3">Qty</th>
+                    <th className="table-header text-right py-3">Unit Price</th>
+                    <th className="table-header text-right py-3">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {order.items.map((item) => (
+                    <tr key={item.id} className="border-b border-surface-800">
+                      <td className="py-3 text-sm text-white">Product</td>
+                      <td className="py-3 text-center text-sm text-surface-300">{item.quantity}</td>
+                      <td className="py-3 text-right text-sm text-surface-300">
+                        {formatBRL(item.unitPrice)}
+                      </td>
+                      <td className="py-3 text-right text-sm font-medium text-white">
+                        {formatBRL(item.total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Totals */}
+            <div className="mt-6 space-y-3 pt-6 border-t border-surface-700">
+              <div className="flex justify-between text-sm">
+                <span className="text-surface-400">Subtotal</span>
+                <span className="text-white">{formatBRL(order.subtotal)}</span>
+              </div>
+              {order.tax > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-surface-400">Impostos</span>
+                  <span className="text-white">{formatBRL(order.tax)}</span>
+                </div>
+              )}
+              {order.discount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-surface-400">Desconto</span>
+                  <span className="text-emerald-400">-{formatBRL(order.discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-lg font-bold border-t border-surface-700 pt-3">
+                <span className="text-white">Total</span>
+                <span className="text-brand-400">{formatBRL(order.total)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Delivery Info */}
+          <div className="card">
+            <h3 className="text-lg font-semibold text-white mb-4">Delivery Information</h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-surface-400">Delivery Date</span>
+                <span className="text-white">
+                  {new Date(order.due_date).toLocaleDateString('en-US')}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-surface-400">Type</span>
+                <span className="text-white">
+                  {order.delivery_type === 'pickup' ? 'Pickup' : 'Delivery'}
+                </span>
+              </div>
+              {order.delivery_address && (
+                <div className="flex justify-between">
+                  <span className="text-surface-400">Address</span>
+                  <span className="text-white text-right">{order.delivery_address}</span>
+                </div>
+              )}
+              {order.notes && (
+                <div className="pt-3 border-t border-surface-700">
+                  <p className="text-surface-400 mb-2">Notes</p>
+                  <p className="text-surface-200 bg-surface-800 p-3 rounded">
+                    {order.notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          {/* Customer Info */}
+          <div className="card">
+            <h3 className="text-lg font-semibold text-white mb-4">Customer</h3>
+            <div className="space-y-2">
+              <p className="font-semibold text-white">{order.Customer_name || 'Customer'}</p>
+              {order.Customer_email && (
+                <p className="text-sm text-surface-400">{order.Customer_email}</p>
+              )}
+              {order.Customer_phone && (
+                <p className="text-sm text-surface-400">{order.Customer_phone}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Payment Section */}
+          <div className="card">
+            <h3 className="text-lg font-semibold text-white mb-4">Payment</h3>
+
+            <div className={`p-3 rounded-lg mb-4 text-sm font-semibold ${
+              order.payment_status === 'paid'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : order.payment_status === 'partial'
+                ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+            }`}>
+              {order.payment_status === 'paid'
+                ? 'Paid'
+                : order.payment_status === 'partial'
+                ? 'Partially Paid'
+                : 'Unpaid'}
+            </div>
+
+            <div className="bg-surface-800 p-3 rounded-lg mb-4">
+              <p className="text-xs text-surface-500 mb-1">Amount to receive</p>
+              <p className="text-2xl font-bold text-white">
+                {formatBRL(Math.max(0, order.total - (order.payment_status === 'paid' ? order.total : 0)))}
+              </p>
+            </div>
+
+            {!recordingPayment ? (
+              <button
+                onClick={() => setRecordingPayment(true)}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                <DollarSign size={18} />
+                Record Payment
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-surface-500 mb-2">Amount</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="input w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-surface-500 mb-2">Method</label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value as any)}
+                    className="input w-full"
+                  >
+                    <option value="pix">PIX</option>
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setRecordingPayment(false)}
+                    className="btn-secondary flex-1"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleRecordPayment}
+                    disabled={updateStatusLoading}
+                    className="btn-primary flex-1"
+                  >
+                    Record
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Order Info */}
+          <div className="card">
+            <h3 className="text-sm font-semibold text-surface-400 uppercase mb-3">
+              Order Information
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-surface-500">Order ID</span>
+                <span className="text-surface-300 font-mono text-xs">{order.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-surface-500">Created on</span>
+                <span className="text-surface-300">
+                  {new Date(order.created_at).toLocaleDateString('en-US')}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-surface-500">Updated on</span>
+                <span className="text-surface-300">
+                  {new Date(order.updated_at).toLocaleDateString('en-US')}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default OrderDetail;
